@@ -36,7 +36,7 @@ SYSTEM_PROMPT = """あなたは議論の「論証構造」だけを評価する�
 4. 参加者は最低2名。ハンドルは入力に出てきた文字列をそのまま使う。
 5. winner には最高得点者のハンドルを入れる。同点なら "引き分け" とする。
 6. 議論として成立していない場合（雑談、単なる同意、1人しか実質発言していない等）は valid を false にする。
-7. reason は120文字以内の日本語。topic は30文字以内。comment は40文字以内。
+7. reason は40文字以内の日本語で勝者を選んだ決め手を書く。topic は30文字以内。comment は40文字以内。
 """
 
 RESPONSE_SCHEMA = {
@@ -62,7 +62,7 @@ RESPONSE_SCHEMA = {
             },
         },
         "winner": {"type": "STRING"},
-        "reason": {"type": "STRING"},
+        "reason": {"type": "STRING"},  # 40文字以内
     },
     "required": ["valid", "topic", "participants", "winner", "reason"],
 }
