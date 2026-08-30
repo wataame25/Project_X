@@ -57,7 +57,7 @@ def handle_mention(client: TwitterClient, mention: dict, gemini_key: str, model:
         print("  already replied, skipping")
         return
 
-    chain = client.get_conversation_chain(conv_id)
+    chain = client.get_full_chain(tweet_id, conv_id)
     if not chain:
         print("  ! could not read thread")
         return

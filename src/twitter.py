@@ -7,6 +7,7 @@ from typing import Any
 import tweepy
 
 MAX_CONVERSATION = 60
+MAX_QUOTE_DEPTH = 10
 
 
 class TwitterError(RuntimeError):
@@ -112,6 +113,73 @@ class TwitterClient:
 
         chain.sort(key=lambda x: x["created_at"])
         return chain[-MAX_CONVERSATION:]
+
+    def _fetch_tweet(self, tweet_id: str) -> dict[str, Any] | None:
+        """Fetch a single tweet including referenced_tweets for quote traversal."""
+        try:
+            resp = self._client.get_tweet(
+                tweet_id,
+                tweet_fields=["author_id", "created_at", "text", "referenced_tweets"],
+                expansions=["author_id"],
+                user_fields=["username"],
+            )
+        except Exception:
+            return None
+        if not resp.data:
+            return None
+        t = resp.data
+        users = {str(u.id): u.username for u in (resp.includes or {}).get("users", [])}
+        return {
+            "id": str(t.id),
+            "text": (t.text or "").strip(),
+            "handle": users.get(str(t.author_id), "unknown"),
+            "created_at": t.created_at.isoformat() if t.created_at else "",
+            "_refs": [
+                {"type": r.type, "id": str(r.id)}
+                for r in (getattr(t, "referenced_tweets", None) or [])
+            ],
+        }
+
+    def _traverse_quote_chain(self, start_tweet_id: str) -> list[dict[str, Any]]:
+        """Walk up the quote chain from start_tweet_id, up to MAX_QUOTE_DEPTH levels."""
+        chain: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        tweet_id = start_tweet_id
+
+        for _ in range(MAX_QUOTE_DEPTH):
+            if tweet_id in seen:
+                break
+            tweet = self._fetch_tweet(tweet_id)
+            if not tweet:
+                break
+            seen.add(tweet_id)
+            refs = tweet.pop("_refs", [])
+            chain.append(tweet)
+
+            quoted_id = next(
+                (r["id"] for r in refs if r["type"] == "quoted"), None
+            )
+            if not quoted_id:
+                break
+            tweet_id = quoted_id
+
+        return chain
+
+    def get_full_chain(self, mention_id: str, conv_id: str) -> list[dict[str, Any]]:
+        """Reply thread + quote chain merged, deduplicated, sorted chronologically."""
+        seen: set[str] = set()
+        combined: list[dict[str, Any]] = []
+
+        def _add(tweets: list[dict[str, Any]]) -> None:
+            for t in tweets:
+                if t["id"] not in seen:
+                    seen.add(t["id"])
+                    combined.append(t)
+
+        _add(self.get_conversation_chain(conv_id))
+        _add(self._traverse_quote_chain(mention_id))
+        combined.sort(key=lambda x: x["created_at"])
+        return combined[-MAX_CONVERSATION:]
 
     def has_bot_replied(self, conv_id: str) -> bool:
         """Return True if the bot already replied in this conversation."""
