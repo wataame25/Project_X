@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import requests
 
 TIMEOUT = 120
+RETRY_DELAYS = [10, 20, 40]  # seconds between retries on 503/429
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 AXES = [
@@ -93,17 +95,28 @@ def judge(transcript: str, api_key: str, model: str = "gemini-3.6-flash") -> dic
             "responseSchema": RESPONSE_SCHEMA,
         },
     }
-    r = requests.post(
-        ENDPOINT.format(model=model),
-        params={"key": api_key},
-        json=body,
-        timeout=TIMEOUT,
-    )
-    if r.status_code != 200:
-        raise RuntimeError(f"gemini [{r.status_code}]: {r.text[:300]}")
-    data = r.json()
-    try:
-        raw = data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError) as e:
-        raise RuntimeError(f"unexpected gemini response: {json.dumps(data)[:300]}") from e
-    return json.loads(raw)
+
+    last_error: Exception | None = None
+    for attempt, delay in enumerate([0] + RETRY_DELAYS):
+        if delay:
+            print(f"  gemini unavailable, retrying in {delay}s (attempt {attempt + 1})")
+            time.sleep(delay)
+        r = requests.post(
+            ENDPOINT.format(model=model),
+            params={"key": api_key},
+            json=body,
+            timeout=TIMEOUT,
+        )
+        if r.status_code in (429, 503):
+            last_error = RuntimeError(f"gemini [{r.status_code}]: {r.text[:300]}")
+            continue
+        if r.status_code != 200:
+            raise RuntimeError(f"gemini [{r.status_code}]: {r.text[:300]}")
+        data = r.json()
+        try:
+            raw = data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError) as e:
+            raise RuntimeError(f"unexpected gemini response: {json.dumps(data)[:300]}") from e
+        return json.loads(raw)
+
+    raise last_error  # type: ignore[misc]
