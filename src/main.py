@@ -73,7 +73,8 @@ def handle_mention(client: TwitterClient, mention: dict, gemini_key: str, model:
         result = judge(transcript, gemini_key, model)
         print(f"  verdict: {json.dumps(result, ensure_ascii=False)[:600]}")
         if not result.get("valid"):
-            text = format_skip("論争として成立していないと判断しました。")
+            reason = result.get("reason") or "論争として成立していないと判断しました。"
+            text = format_skip(reason)
         else:
             text = format_verdict(result)
 
