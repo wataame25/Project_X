@@ -7,6 +7,7 @@ from typing import Any
 from .judge import AXES
 
 LIMIT = 270  # margin below X's 280-character cap
+HASHTAG = "\n#ハムジャッジ"
 
 
 def _clip(s: str, n: int) -> str:
@@ -43,8 +44,8 @@ def format_verdict(result: dict[str, Any]) -> str:
     else:
         text = _clip(text, LIMIT)
 
-    return _clip(text, LIMIT)
+    return _clip(text, LIMIT - len(HASHTAG)) + HASHTAG
 
 
 def format_skip(reason_text: str) -> str:
-    return _clip(f"⚖️ 判定できませんでした。\n{reason_text}", LIMIT)
+    return _clip(f"⚖️ 判定できませんでした。\n{reason_text}", LIMIT - len(HASHTAG)) + HASHTAG
