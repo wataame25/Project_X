@@ -14,6 +14,15 @@ class TwitterError(RuntimeError):
     pass
 
 
+def _parse_users(includes: Any) -> tuple[dict[str, str], dict[str, str]]:
+    """Return (handle_map, name_map) keyed by user id string."""
+    users = (includes or {}).get("users", [])
+    return (
+        {str(u.id): u.username for u in users},
+        {str(u.id): (u.name or u.username) for u in users},
+    )
+
+
 class TwitterClient:
     def __init__(
         self,
@@ -50,21 +59,20 @@ class TwitterClient:
             max_results=max_results,
             tweet_fields=["conversation_id", "created_at", "author_id"],
             expansions=["author_id"],
-            user_fields=["username"],
+            user_fields=["username", "name"],
         )
         if not resp.data:
             return []
-        users = {
-            str(u.id): u.username
-            for u in (resp.includes or {}).get("users", [])
-        }
+        handles, names = _parse_users(resp.includes)
         result = []
         for t in resp.data:
+            aid = str(t.author_id)
             result.append({
                 "id": str(t.id),
                 "text": t.text or "",
-                "author_id": str(t.author_id),
-                "handle": users.get(str(t.author_id), "unknown"),
+                "author_id": aid,
+                "handle": handles.get(aid, "unknown"),
+                "name": names.get(aid, handles.get(aid, "unknown")),
                 "conversation_id": str(t.conversation_id),
                 "created_at": t.created_at.isoformat() if t.created_at else "",
             })
@@ -77,37 +85,34 @@ class TwitterClient:
             max_results=100,
             tweet_fields=["author_id", "created_at", "text"],
             expansions=["author_id"],
-            user_fields=["username"],
+            user_fields=["username", "name"],
         )
         tweets = list(resp.data or [])
-        users = {
-            str(u.id): u.username
-            for u in (resp.includes or {}).get("users", [])
-        }
+        handles, names = _parse_users(resp.includes)
 
         # Root tweet may not appear in search results — fetch separately
         root_resp = self._client.get_tweet(
             conv_id,
             tweet_fields=["author_id", "created_at", "text"],
             expansions=["author_id"],
-            user_fields=["username"],
+            user_fields=["username", "name"],
         )
         if root_resp.data:
-            root_users = {
-                str(u.id): u.username
-                for u in (root_resp.includes or {}).get("users", [])
-            }
-            users.update(root_users)
+            rh, rn = _parse_users(root_resp.includes)
+            handles.update(rh)
+            names.update(rn)
             existing_ids = {str(t.id) for t in tweets}
             if str(root_resp.data.id) not in existing_ids:
                 tweets.append(root_resp.data)
 
         chain = []
         for t in tweets:
+            aid = str(t.author_id)
             chain.append({
                 "id": str(t.id),
                 "text": (t.text or "").strip(),
-                "handle": users.get(str(t.author_id), "unknown"),
+                "handle": handles.get(aid, "unknown"),
+                "name": names.get(aid, handles.get(aid, "unknown")),
                 "created_at": t.created_at.isoformat() if t.created_at else "",
             })
 
@@ -121,18 +126,20 @@ class TwitterClient:
                 tweet_id,
                 tweet_fields=["author_id", "created_at", "text", "referenced_tweets"],
                 expansions=["author_id"],
-                user_fields=["username"],
+                user_fields=["username", "name"],
             )
         except Exception:
             return None
         if not resp.data:
             return None
         t = resp.data
-        users = {str(u.id): u.username for u in (resp.includes or {}).get("users", [])}
+        handles, names = _parse_users(resp.includes)
+        aid = str(t.author_id)
         return {
             "id": str(t.id),
             "text": (t.text or "").strip(),
-            "handle": users.get(str(t.author_id), "unknown"),
+            "handle": handles.get(aid, "unknown"),
+            "name": names.get(aid, handles.get(aid, "unknown")),
             "created_at": t.created_at.isoformat() if t.created_at else "",
             "_refs": [
                 {"type": r.type, "id": str(r.id)}

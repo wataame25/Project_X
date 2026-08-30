@@ -76,7 +76,8 @@ def build_transcript(chain: list[dict[str, Any]], bot_handle: str) -> str:
         text = p["text"].strip().replace("\n", " ")
         if len(text) > 500:
             text = text[:500] + "…"
-        lines.append(f"[{i}] @{p['handle']}: {text}")
+        speaker = p.get("name") or p["handle"]
+        lines.append(f"[{i}] {speaker}: {text}")
     return "\n".join(lines)
 
 
