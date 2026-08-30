@@ -62,7 +62,8 @@ def handle_mention(client: TwitterClient, mention: dict, gemini_key: str, model:
         print("  ! could not read thread")
         return
 
-    debate = [p for p in chain if p["handle"] != client.handle]
+    # Exclude bot tweets and the summoning mention itself from the debate
+    debate = [p for p in chain if p["handle"] != client.handle and p["id"] != tweet_id]
     speakers = {p["handle"] for p in debate}
 
     if len(debate) < MIN_POSTS or len(speakers) < 2:

@@ -124,7 +124,7 @@ class TwitterClient:
         try:
             resp = self._client.get_tweet(
                 tweet_id,
-                tweet_fields=["author_id", "created_at", "text", "referenced_tweets"],
+                tweet_fields=["author_id", "created_at", "text", "referenced_tweets", "conversation_id"],
                 expansions=["author_id"],
                 user_fields=["username", "name"],
             )
@@ -135,12 +135,14 @@ class TwitterClient:
         t = resp.data
         handles, names = _parse_users(resp.includes)
         aid = str(t.author_id)
+        conv_id = str(t.conversation_id) if getattr(t, "conversation_id", None) else tweet_id
         return {
             "id": str(t.id),
             "text": (t.text or "").strip(),
             "handle": handles.get(aid, "unknown"),
             "name": names.get(aid, handles.get(aid, "unknown")),
             "created_at": t.created_at.isoformat() if t.created_at else "",
+            "conversation_id": conv_id,
             "_refs": [
                 {"type": r.type, "id": str(r.id)}
                 for r in (getattr(t, "referenced_tweets", None) or [])
@@ -173,7 +175,14 @@ class TwitterClient:
         return chain
 
     def get_full_chain(self, mention_id: str, conv_id: str) -> list[dict[str, Any]]:
-        """Reply thread + quote chain merged, deduplicated, sorted chronologically."""
+        """Fetch the debate chain the mention points to, supporting third-party judgments.
+
+        Strategy:
+        1. Find the "anchor" tweet the mention replies to or quotes.
+        2. Traverse the quote chain upward from the anchor (covers quote-based debates).
+        3. Also fetch the anchor's reply-thread conversation (covers reply-based debates).
+        4. Fall back to the mention's own conversation / quote chain.
+        """
         seen: set[str] = set()
         combined: list[dict[str, Any]] = []
 
@@ -183,8 +192,30 @@ class TwitterClient:
                     seen.add(t["id"])
                     combined.append(t)
 
+        # Fetch mention tweet to find what it points to
+        mention_data = self._fetch_tweet(mention_id)
+        refs = mention_data.pop("_refs", []) if mention_data else []
+
+        # Anchor = the tweet the mention replies to OR quotes
+        anchor_id = next(
+            (r["id"] for r in refs if r["type"] in ("replied_to", "quoted")),
+            None,
+        )
+
+        if anchor_id:
+            # Get anchor's conversation_id for reply-thread fetch
+            anchor_data = self._fetch_tweet(anchor_id)
+            if anchor_data:
+                anchor_data.pop("_refs", [])
+                _add(self.get_conversation_chain(anchor_data.get("conversation_id", anchor_id)))
+
+            # Traverse quote chain upward from anchor to root
+            _add(self._traverse_quote_chain(anchor_id))
+
+        # Fallback: mention's own conversation and quote chain
         _add(self.get_conversation_chain(conv_id))
         _add(self._traverse_quote_chain(mention_id))
+
         combined.sort(key=lambda x: x["created_at"])
         return combined[-MAX_CONVERSATION:]
 
