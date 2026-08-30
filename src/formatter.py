@@ -36,7 +36,7 @@ def _score_lines(participants: list[dict[str, Any]], detailed: bool) -> list[str
 
 
 def format_verdict(result: dict[str, Any]) -> str:
-    parts = sorted(result.get("participants", []), key=lambda p: -p.get("total", 0))[:4]
+    parts = sorted(result.get("participants", []), key=lambda p: -p.get("total", 0))[:2]
     topic = _clip(result.get("topic", ""), 30)
     winner = result.get("winner", "引き分け")
     winner_label = winner if winner in ("引き分け", "") else _clip_name(winner)
