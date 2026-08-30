@@ -10,7 +10,7 @@ LIMIT = 270  # margin below X's 280-character cap
 HASHTAG = "\n#ハムジャッジ"
 
 
-NAME_MAX = 4
+NAME_MAX = 5
 
 
 def _clip(s: str, n: int) -> str:
