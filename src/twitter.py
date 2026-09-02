@@ -149,8 +149,12 @@ class TwitterClient:
             ],
         }
 
-    def _traverse_quote_chain(self, start_tweet_id: str) -> list[dict[str, Any]]:
-        """Walk up the quote chain from start_tweet_id, up to MAX_QUOTE_DEPTH levels."""
+    def _traverse_debate_chain(self, start_tweet_id: str) -> list[dict[str, Any]]:
+        """Walk backward through a debate chain (quotes and replies) up to MAX_QUOTE_DEPTH.
+
+        Follows 'quoted' links first; falls back to 'replied_to' so mixed
+        quote-and-reply debates are fully traversed.
+        """
         chain: list[dict[str, Any]] = []
         seen: set[str] = set()
         tweet_id = start_tweet_id
@@ -165,12 +169,13 @@ class TwitterClient:
             refs = tweet.pop("_refs", [])
             chain.append(tweet)
 
-            quoted_id = next(
-                (r["id"] for r in refs if r["type"] == "quoted"), None
-            )
-            if not quoted_id:
+            # Prefer quote link (debate via quote tweet); fall back to reply link
+            next_id = next((r["id"] for r in refs if r["type"] == "quoted"), None)
+            if not next_id:
+                next_id = next((r["id"] for r in refs if r["type"] == "replied_to"), None)
+            if not next_id:
                 break
-            tweet_id = quoted_id
+            tweet_id = next_id
 
         return chain
 
@@ -210,11 +215,11 @@ class TwitterClient:
                 _add(self.get_conversation_chain(anchor_data.get("conversation_id", anchor_id)))
 
             # Traverse quote chain upward from anchor to root
-            _add(self._traverse_quote_chain(anchor_id))
+            _add(self._traverse_debate_chain(anchor_id))
 
         # Fallback: mention's own conversation and quote chain
         _add(self.get_conversation_chain(conv_id))
-        _add(self._traverse_quote_chain(mention_id))
+        _add(self._traverse_debate_chain(mention_id))
 
         combined.sort(key=lambda x: x["created_at"])
         return combined[-MAX_CONVERSATION:]
